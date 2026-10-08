@@ -144,6 +144,18 @@
 
     .med-note { color: #8b93a1; font-size: 13px; }
 
+    /* 服药人标签：父亲=蓝，母亲=粉 */
+    .person-badge {
+      display: inline-block;
+      font-size: 12px;
+      padding: 1px 8px;
+      border-radius: 6px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+    .person-father { background: #e8f1fd; color: #2f7de1; }
+    .person-mother { background: #fdeaf3; color: #d6409f; }
+
     /* 删除按钮 */
     .btn-del {
       border: none;
@@ -175,6 +187,65 @@
       text-align: center;
       word-break: break-all;
     }
+
+    /* 图片选择按钮（用 label 触发隐藏的 file input，更美观） */
+    .file-btn {
+      display: inline-block;
+      border: 1px dashed #9db8de;
+      color: #2f7de1;
+      background: #f5f9ff;
+      border-radius: 9px;
+      padding: 10px 16px;
+      font-size: 15px;
+      cursor: pointer;
+    }
+
+    /* 已选图片预览 */
+    .preview-wrap { margin-top: 10px; }
+    .preview {
+      width: 110px;
+      height: 110px;
+      object-fit: cover;
+      border-radius: 9px;
+      border: 1px solid #e0e5ec;
+      display: block;
+    }
+    .btn-remove-photo {
+      display: block;
+      margin-top: 6px;
+      width: 110px;
+      border: none;
+      background: #fdeaea;
+      color: #e04b4b;
+      font-size: 13px;
+      padding: 6px;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+
+    /* 列表里的缩略图 */
+    .med-photo {
+      width: 64px;
+      height: 64px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid #e0e5ec;
+      flex-shrink: 0;
+      cursor: pointer;
+    }
+
+    /* 点击缩略图后的全屏查看层 */
+    .lightbox {
+      position: fixed;
+      left: 0; top: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .lightbox img { max-width: 100%; max-height: 100%; border-radius: 6px; }
   </style>
 </head>
 <body>
@@ -187,6 +258,15 @@
     <!-- ===== 新增表单 ===== -->
     <section class="card">
       <h2>新增药物</h2>
+
+      <div class="field">
+        <label>服药人</label>
+        <!-- 两个按钮切换，点击高亮当前选中的人（默认父亲） -->
+        <div class="time-row" id="personChips">
+          <button type="button" class="time-chip active" data-person="父亲">父亲</button>
+          <button type="button" class="time-chip" data-person="母亲">母亲</button>
+        </div>
+      </div>
 
       <div class="field">
         <label for="name">药物名称 *</label>
@@ -220,11 +300,27 @@
         <textarea id="note" placeholder="选填，例如：需长期服用、忌辛辣等"></textarea>
       </div>
 
+      <div class="field">
+        <label>药盒 / 处方照片（可选）</label>
+        <!-- label 触发隐藏的 file input；微信里会弹出“拍照 / 从相册选择” -->
+        <label class="file-btn" for="photo">选择 / 拍摄照片</label>
+        <input id="photo" type="file" accept="image/*" style="display:none" />
+        <div class="preview-wrap" id="previewWrap" style="display:none">
+          <img id="preview" class="preview" alt="预览" />
+          <button type="button" class="btn-remove-photo" id="removePhoto">移除图片</button>
+        </div>
+      </div>
+
       <button class="btn-primary" id="addBtn">添加记录</button>
     </section>
 
     <!-- ===== 药物列表 ===== -->
     <section id="list"></section>
+
+    <!-- 点击缩略图后的全屏查看层 -->
+    <div class="lightbox" id="lightbox" style="display:none">
+      <img id="lightboxImg" alt="图片" />
+    </div>
   </main>
 
   <script>
@@ -241,7 +337,7 @@
     };
 
     // ===== 数据读写：统一使用 localStorage，key 固定 =====
-    // 数据结构：[{ id, name, dosage, usage, time, note }]
+    // 数据结构：[{ id, person, name, dosage, usage, time, note, photo }]  photo 为压缩后的 base64 图片
     var STORAGE_KEY = 'med_records_v1';
 
     // 检测 localStorage 是否可用（微信某些内置浏览器/无痕模式会禁用或直接抛异常）
@@ -278,14 +374,18 @@
       }
     }
 
-    // 写入本地数据：即使持久化失败，也不影响本次新增/显示
+    // 写入本地数据：返回是否成功（图片较大时可能因空间不足失败）
     function saveData(list) {
-      memoryStore = list;
-      if (!canUseStorage) return;
+      if (!canUseStorage) {
+        memoryStore = list;
+        return true;
+      }
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+        memoryStore = list;
+        return true;
       } catch (e) {
-        // 静默降级：数据仅保存在内存里
+        return false;
       }
     }
 
@@ -296,10 +396,20 @@
       usage: document.getElementById('usage'),
       time: document.getElementById('time'),
       note: document.getElementById('note'),
+      photo: document.getElementById('photo'),
+      preview: document.getElementById('preview'),
+      previewWrap: document.getElementById('previewWrap'),
+      removePhoto: document.getElementById('removePhoto'),
       addBtn: document.getElementById('addBtn'),
       list: document.getElementById('list'),
-      timeChips: document.getElementById('timeChips')
+      timeChips: document.getElementById('timeChips'),
+      personChips: document.getElementById('personChips'),
+      lightbox: document.getElementById('lightbox'),
+      lightboxImg: document.getElementById('lightboxImg')
     };
+
+    // 当前待保存的图片（压缩后的 base64 字符串），空字符串表示没有图片
+    var currentPhoto = '';
 
     // ===== 转义 HTML，防止输入内容破坏页面结构 =====
     function escapeHtml(str) {
@@ -321,6 +431,37 @@
       return null;
     }
 
+    // ===== 取得当前选中的服药人 =====
+    function getPerson() {
+      var active = el.personChips.querySelector('.time-chip.active');
+      return active ? active.getAttribute('data-person') : '';
+    }
+
+    // ===== 图片压缩：读取文件 → 缩放到最长边 800px → 输出 JPEG(base64) =====
+    // 压缩能大幅减小体积，避免 localStorage 很快存满
+    function compressImage(file, callback) {
+      var reader = new FileReader();
+      reader.onload = function (e) {
+        var img = new Image();
+        img.onload = function () {
+          var MAX = 800;
+          var w = img.width;
+          var h = img.height;
+          if (w > h && w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+          else if (h >= w && h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+
+          var canvas = document.createElement('canvas');
+          canvas.width = w;
+          canvas.height = h;
+          canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+          // 0.7 的质量，肉眼基本够看，体积小很多
+          callback(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+
     // ===== 渲染列表 =====
     function render() {
       var list = loadData();
@@ -335,8 +476,19 @@
       var html = '';
       list.forEach(function (item) {
         html += '<div class="med-item">';
+        // 有图片时先显示缩略图，点击可全屏查看
+        if (item.photo) {
+          html += '  <img class="med-photo" src="' + item.photo + '" alt="照片" />';
+        }
         html += '  <div class="med-info">';
-        html += '    <div class="med-name">' + escapeHtml(item.name) + '</div>';
+        html += '    <div class="med-name">';
+        // 服药人标签（父亲蓝 / 母亲粉）
+        if (item.person) {
+          var pcls = item.person === '母亲' ? 'person-mother' : 'person-father';
+          html += '<span class="person-badge ' + pcls + '">' + escapeHtml(item.person) + '</span>';
+        }
+        html += escapeHtml(item.name);
+        html += '    </div>';
         // 服药时间、用量、用法按需显示
         if (item.time)   html += '    <div class="med-line"><span class="tag">时间</span>' + escapeHtml(item.time) + '</div>';
         if (item.dosage) html += '    <div class="med-line">用量：' + escapeHtml(item.dosage) + '</div>';
@@ -363,13 +515,20 @@
       // 用时间戳做唯一 id
       list.unshift({
         id: Date.now().toString(),
+        person: getPerson(),
         name: name,
         dosage: el.dosage.value.trim(),
         usage: el.usage.value.trim(),
         time: el.time.value.trim(),
-        note: el.note.value.trim()
+        note: el.note.value.trim(),
+        photo: currentPhoto || ''
       });
-      saveData(list);
+
+      // 保存失败通常是空间不足（图片占空间），此时不加入并提示
+      if (!saveData(list)) {
+        alert('保存失败：本机存储空间可能已满。可删除一些旧记录，或换一张小一点的图片再试。');
+        return;
+      }
 
       // 清空表单
       el.name.value = '';
@@ -377,6 +536,10 @@
       el.usage.value = '';
       el.time.value = '';
       el.note.value = '';
+      currentPhoto = '';
+      el.photo.value = '';
+      el.preview.src = '';
+      el.previewWrap.style.display = 'none';
       clearChipActive();
 
       render();
@@ -415,11 +578,53 @@
       btn.classList.add('active');
     });
 
+    // 服药人切换：点谁谁高亮
+    el.personChips.addEventListener('click', function (e) {
+      var btn = closestClass(e.target, 'time-chip');
+      if (!btn) return;
+      var chips = el.personChips.querySelectorAll('.time-chip');
+      for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+      btn.classList.add('active');
+    });
+
     // 列表删除按钮（事件委托）
     el.list.addEventListener('click', function (e) {
       var btn = closestClass(e.target, 'btn-del');
       if (!btn) return;
       deleteRecord(btn.getAttribute('data-id'));
+    });
+
+    // 选择/拍摄图片：选好后立即压缩并预览
+    el.photo.addEventListener('change', function () {
+      var file = el.photo.files && el.photo.files[0];
+      if (!file) return;
+      compressImage(file, function (dataUrl) {
+        currentPhoto = dataUrl;
+        el.preview.src = dataUrl;
+        el.previewWrap.style.display = 'block';
+      });
+    });
+
+    // 移除已选图片
+    el.removePhoto.addEventListener('click', function () {
+      currentPhoto = '';
+      el.photo.value = '';
+      el.preview.src = '';
+      el.previewWrap.style.display = 'none';
+    });
+
+    // 点击列表里的缩略图 → 全屏查看
+    el.list.addEventListener('click', function (e) {
+      var img = closestClass(e.target, 'med-photo');
+      if (!img) return;
+      el.lightboxImg.src = img.src;
+      el.lightbox.style.display = 'flex';
+    });
+
+    // 点击全屏遮罩关闭
+    el.lightbox.addEventListener('click', function () {
+      el.lightbox.style.display = 'none';
+      el.lightboxImg.src = '';
     });
 
     // 首次渲染
