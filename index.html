@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <!-- 移动端适配：宽度跟随设备，禁止缩放，保证在微信内置浏览器里显示正常 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>用药记录</title>
+  <style>
+    /* ===== 基础样式：移动优先 ===== */
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+      background: #f2f4f7;
+      color: #1f2937;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+
+    /* 顶部标题栏 */
+    header {
+      background: #2f7de1;
+      color: #fff;
+      padding: 16px 18px;
+      font-size: 18px;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 1px 6px rgba(0,0,0,.12);
+    }
+
+    main { padding: 14px 14px 40px; }
+
+    /* 卡片通用样式 */
+    .card {
+      background: #fff;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.06);
+    }
+
+    .card h2 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #111827;
+    }
+
+    /* 表单字段 */
+    .field { margin-bottom: 12px; }
+
+    .field label {
+      display: block;
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 5px;
+    }
+
+    .field input,
+    .field textarea {
+      width: 100%;
+      border: 1px solid #d8dde5;
+      border-radius: 9px;
+      padding: 11px 12px;
+      font-size: 16px; /* 16px 可避免 iOS 自动放大 */
+      background: #fbfcfe;
+      color: #1f2937;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .field input:focus,
+    .field textarea:focus { border-color: #2f7de1; background: #fff; }
+
+    .field textarea { resize: vertical; min-height: 60px; }
+
+    /* 服药时间：快捷按钮 + 输入框组合 */
+    .time-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+
+    .time-chip {
+      border: 1px solid #d8dde5;
+      background: #fff;
+      color: #4b5563;
+      border-radius: 999px;
+      padding: 7px 14px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    .time-chip.active { background: #e8f1fd; border-color: #2f7de1; color: #2f7de1; }
+
+    /* 主按钮 */
+    .btn-primary {
+      width: 100%;
+      border: none;
+      background: #2f7de1;
+      color: #fff;
+      font-size: 17px;
+      font-weight: 600;
+      padding: 13px;
+      border-radius: 10px;
+      margin-top: 4px;
+      cursor: pointer;
+    }
+
+    .btn-primary:active { background: #2568c0; }
+
+    /* 列表项 */
+    .med-item {
+      background: #fff;
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.06);
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .med-info { flex: 1; min-width: 0; }
+
+    .med-name {
+      font-size: 17px;
+      font-weight: 600;
+      color: #111827;
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+
+    .med-line { font-size: 14px; color: #4b5563; margin-bottom: 3px; word-break: break-all; }
+
+    .med-line .tag {
+      display: inline-block;
+      background: #eaf6ee;
+      color: #1f9254;
+      border-radius: 6px;
+      padding: 1px 8px;
+      font-size: 13px;
+      margin-right: 6px;
+    }
+
+    .med-note { color: #8b93a1; font-size: 13px; }
+
+    /* 删除按钮 */
+    .btn-del {
+      border: none;
+      background: #fdeaea;
+      color: #e04b4b;
+      font-size: 14px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .btn-del:active { background: #f8d5d5; }
+
+    /* 空状态 */
+    .empty {
+      text-align: center;
+      color: #9aa1ad;
+      font-size: 14px;
+      padding: 40px 0;
+    }
+
+    /* 诊断提示条：用于确认页面脚本是否在微信里正常运行 */
+    .diag {
+      background: #eef1f5;
+      color: #6b7280;
+      font-size: 13px;
+      padding: 8px 14px;
+      text-align: center;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <header>用药记录</header>
+  <!-- 诊断提示条：默认就显示（不依赖脚本），脚本能运行时会把文字改成绿色“脚本已运行”
+       如果这里一直是下面这句灰色文字，说明微信没有执行页面脚本 -->
+  <div id="diag" class="diag">脚本未运行（若一直停在这句话，说明微信没有执行本页脚本）</div>
+
+  <main>
+    <!-- ===== 新增表单 ===== -->
+    <section class="card">
+      <h2>新增药物</h2>
+
+      <div class="field">
+        <label for="name">药物名称 *</label>
+        <input id="name" type="text" placeholder="例如：阿司匹林肠溶片" />
+      </div>
+
+      <div class="field">
+        <label for="dosage">用量</label>
+        <input id="dosage" type="text" placeholder="例如：1 片 / 每次" />
+      </div>
+
+      <div class="field">
+        <label for="usage">用法</label>
+        <input id="usage" type="text" placeholder="例如：饭前口服、温水送服" />
+      </div>
+
+      <div class="field">
+        <label>服药时间</label>
+        <!-- 常用时间快捷选择，点一下自动填入下方输入框 -->
+        <div class="time-row" id="timeChips">
+          <button type="button" class="time-chip" data-time="早上">早上</button>
+          <button type="button" class="time-chip" data-time="中午">中午</button>
+          <button type="button" class="time-chip" data-time="晚上">晚上</button>
+          <button type="button" class="time-chip" data-time="睡前">睡前</button>
+        </div>
+        <input id="time" type="text" placeholder="例如：早、晚各一次（可点上方快捷按钮）" />
+      </div>
+
+      <div class="field">
+        <label for="note">备注</label>
+        <textarea id="note" placeholder="选填，例如：需长期服用、忌辛辣等"></textarea>
+      </div>
+
+      <button class="btn-primary" id="addBtn">添加记录</button>
+    </section>
+
+    <!-- ===== 药物列表 ===== -->
+    <section id="list"></section>
+  </main>
+
+  <script>
+    // ===== 全局错误捕获：脚本一旦出错，就在诊断条里显示出来，方便在手机上排查 =====
+    window.onerror = function (msg) {
+      var d = document.getElementById('diag');
+      if (d) {
+        d.hidden = false;
+        d.style.background = '#ffe5e5';
+        d.style.color = '#c0392b';
+        d.textContent = '脚本出错：' + msg;
+      }
+      return false;
+    };
+
+    // ===== 数据读写：统一使用 localStorage，key 固定 =====
+    // 数据结构：[{ id, name, dosage, usage, time, note }]
+    var STORAGE_KEY = 'med_records_v1';
+
+    // 检测 localStorage 是否可用（微信某些内置浏览器/无痕模式会禁用或直接抛异常）
+    var canUseStorage = (function () {
+      try {
+        var k = '__med_test__';
+        localStorage.setItem(k, '1');
+        localStorage.removeItem(k);
+        return true;
+      } catch (e) {
+        return false;
+      }
+    })();
+
+    // 显示诊断状态：脚本能执行到这里，就说明页面的 JS 确实在运行
+    (function () {
+      var d = document.getElementById('diag');
+      if (!d) return;
+      d.style.background = '#eaf6ee';
+      d.style.color = '#1f9254';
+      d.textContent = '脚本已运行 ｜ 本机存储：' + (canUseStorage ? '可用' : '不可用（数据无法长期保存）');
+    })();
+
+    // localStorage 不可用时的内存兜底（当次打开页面内有效，不持久化）
+    var memoryStore = [];
+
+    function loadData() {
+      if (!canUseStorage) return memoryStore;
+      try {
+        var raw = localStorage.getItem(STORAGE_KEY);
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    // 写入本地数据：即使持久化失败，也不影响本次新增/显示
+    function saveData(list) {
+      memoryStore = list;
+      if (!canUseStorage) return;
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+      } catch (e) {
+        // 静默降级：数据仅保存在内存里
+      }
+    }
+
+    // ===== DOM 引用 =====
+    var el = {
+      name: document.getElementById('name'),
+      dosage: document.getElementById('dosage'),
+      usage: document.getElementById('usage'),
+      time: document.getElementById('time'),
+      note: document.getElementById('note'),
+      addBtn: document.getElementById('addBtn'),
+      list: document.getElementById('list'),
+      timeChips: document.getElementById('timeChips')
+    };
+
+    // ===== 转义 HTML，防止输入内容破坏页面结构 =====
+    function escapeHtml(str) {
+      return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // ===== 向上查找指定 class 的祖先节点 =====
+    // 替代 Element.closest，兼容不支持该方法的老版微信 X5 内核
+    function closestClass(node, className) {
+      while (node && node.nodeType === 1) {
+        var cls = node.className || '';
+        if ((' ' + cls + ' ').indexOf(' ' + className + ' ') !== -1) return node;
+        node = node.parentNode;
+      }
+      return null;
+    }
+
+    // ===== 渲染列表 =====
+    function render() {
+      var list = loadData();
+
+      // 空状态提示
+      if (list.length === 0) {
+        el.list.innerHTML = '<div class="empty">还没有记录，快在下方添加吧～</div>';
+        return;
+      }
+
+      // 逐条拼接 HTML
+      var html = '';
+      list.forEach(function (item) {
+        html += '<div class="med-item">';
+        html += '  <div class="med-info">';
+        html += '    <div class="med-name">' + escapeHtml(item.name) + '</div>';
+        // 服药时间、用量、用法按需显示
+        if (item.time)   html += '    <div class="med-line"><span class="tag">时间</span>' + escapeHtml(item.time) + '</div>';
+        if (item.dosage) html += '    <div class="med-line">用量：' + escapeHtml(item.dosage) + '</div>';
+        if (item.usage)  html += '    <div class="med-line">用法：' + escapeHtml(item.usage) + '</div>';
+        if (item.note)   html += '    <div class="med-line med-note">备注：' + escapeHtml(item.note) + '</div>';
+        html += '  </div>';
+        html += '  <button class="btn-del" data-id="' + item.id + '">删除</button>';
+        html += '</div>';
+      });
+      el.list.innerHTML = html;
+    }
+
+    // ===== 新增记录 =====
+    function addRecord() {
+      var name = el.name.value.trim();
+      // 药名必填校验
+      if (!name) {
+        alert('请填写药物名称');
+        el.name.focus();
+        return;
+      }
+
+      var list = loadData();
+      // 用时间戳做唯一 id
+      list.unshift({
+        id: Date.now().toString(),
+        name: name,
+        dosage: el.dosage.value.trim(),
+        usage: el.usage.value.trim(),
+        time: el.time.value.trim(),
+        note: el.note.value.trim()
+      });
+      saveData(list);
+
+      // 清空表单
+      el.name.value = '';
+      el.dosage.value = '';
+      el.usage.value = '';
+      el.time.value = '';
+      el.note.value = '';
+      clearChipActive();
+
+      render();
+    }
+
+    // ===== 删除记录（按 id 过滤）=====
+    function deleteRecord(id) {
+      if (!confirm('确定要删除这条记录吗？')) return;
+      var list = loadData().filter(function (item) {
+        return item.id !== id;
+      });
+      saveData(list);
+      render();
+    }
+
+    // 清除快捷时间按钮的选中态
+    function clearChipActive() {
+      var chips = el.timeChips.querySelectorAll('.time-chip');
+      for (var i = 0; i < chips.length; i++) chips[i].classList.remove('active');
+    }
+
+    // ===== 事件绑定 =====
+    // 添加按钮
+    el.addBtn.addEventListener('click', addRecord);
+
+    // 快捷时间按钮：点击追加到时间输入框
+    el.timeChips.addEventListener('click', function (e) {
+      var btn = closestClass(e.target, 'time-chip');
+      if (!btn) return;
+      var t = btn.getAttribute('data-time');
+      var cur = el.time.value.trim();
+      // 已存在则不重复追加
+      if (cur.indexOf(t) === -1) {
+        el.time.value = cur ? cur + '、' + t : t;
+      }
+      btn.classList.add('active');
+    });
+
+    // 列表删除按钮（事件委托）
+    el.list.addEventListener('click', function (e) {
+      var btn = closestClass(e.target, 'btn-del');
+      if (!btn) return;
+      deleteRecord(btn.getAttribute('data-id'));
+    });
+
+    // 首次渲染
+    render();
+  </script>
+</body>
+</html>
